@@ -1,0 +1,277 @@
+---
+title: "tana_mortality_IFR"
+author: "Benny Rice"
+date: "7/30/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, eval = FALSE)
+```
+
+***
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+
+## HEADER INFO
+
+**Metcalf Lab | Department of Ecology and Evolutionary Biology | Princeton University**
+
+- July 2020
+- Code associated with project aimed at detecting mortality anomalies in Tana
+- Apologies in advance for amateurish code (ie all the loops and clunkiness)
+
+</div>
+
+***
+
+##### (i) SET UP
+
+Defining main working directory, loading necessary packages
+```{r define mainDir + packages, echo = FALSE, eval = TRUE, message = FALSE}
+mainDir <- '/Users/blrice/Dropbox/Lab Projects/1 Post Doc/9 THE RONA/Mortalitly/code/'
+library(tidyverse)
+library(RJSONIO)      #Retrieving coordinates of cities from text strings by searching OpenStreetMap
+library(kableExtra)   #For printing tables in R markdown
+library(knitr)        #For printing tables in R markdown
+library(rgho)         #Querying the WHO GHO database
+library(reshape2)     #Melting data frames as needed
+library(ggrepel)      #Plotting country names neatly
+library(cowplot)      #ggplot add on for better plots
+library(patchwork)    #Combining ggplots neatly
+library(mgcv)         #Gams
+library(here)         #Finding files easily
+```
+
+Reading in data sets:
+
+1. IFR estimates: `ifrs_from_lit.csv`
+2. UN age data: `un_ages.csv`
+3. Tana age data: `TNR_age.csv`
+
+```{r i2, echo = FALSE, eval = TRUE}
+#1
+filename.ifr_ests <- "ifrs_from_lit.csv"
+ifr_ests <- read.csv(file.path(mainDir, filename.ifr_ests), stringsAsFactors = FALSE)
+#2
+filename.un_ages <- "un_ages.csv"
+un_ages <- read.csv(file.path(mainDir, filename.un_ages), stringsAsFactors = FALSE)
+#3
+filename.df.tana <- "TNR_age.csv"
+df.tana <- read.csv(file.path(mainDir, filename.df.tana), stringsAsFactors = FALSE)
+```
+
+
+***
+***
+
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+
+### Expected mortality burden under different IFR scenarios
+
+</div>
+
+***
+***
+
+##### Section 1: Making age vs IFR curves: Fitting age to IFR estimates
+
+***
+
+- Fitting age to IFR estimates from France, Italy, China using a GAM
+
+```{r 1.01, echo = FALSE, eval = TRUE}
+# Fit age to IFR estimates ------------------------------------------------
+ifr_ests$predictor <- (ifr_ests$age_lower + ifr_ests$age_upper)/2
+ifr_ests$ifr_prop_est <- ifr_ests$ifr_perc_est/100
+
+ifr_fit_age <- gam(ifr_prop_est ~ s(predictor), family = betar(link="logit"), 
+               data = ifr_ests, method = "REML")
+
+ages <- seq(0, 100, by = 1)
+
+ifr_preds_age <- predict(ifr_fit_age,  data.frame(predictor = ages), 
+                     type = "response", se.fit = TRUE)
+ifrs_to_plot_age <- data.frame(ages = ages,
+                               est = ifr_preds_age$fit, 
+                               upper = ifr_preds_age$fit + 2*ifr_preds_age$se.fit, 
+                               lower = ifr_preds_age$fit - 2*ifr_preds_age$se.fit)
+```
+
+***
+
+##### Section 2: Plotting IFR curves 
+
+***
+
+- Writing a function to fit and shift IFR curves
+
+```{r 2.01, echo = FALSE, eval = TRUE}
+predict_ifr <- function(predictor, gam = ifr_fit_age) {
+  predict(gam, newdata = data.frame(predictor = predictor), type = "response")
+}
+```
+
+- Plotting baseline and shifted IFR vs age curves
+
+```{r 2.02, echo = FALSE, eval = TRUE}
+#Creating a ifr by age table for plotting
+age_ifrs <- data.frame(age = seq(1, 100, by = 1))
+age_ifrs %>%
+  mutate(ifr_by_age_plus00y = predict_ifr(predictor = age + 0,      gam = ifr_fit_age), 
+         ifr_by_age_plus02y = predict_ifr(predictor = age + 2,  gam = ifr_fit_age),
+         ifr_by_age_plus04y = predict_ifr(predictor = age + 4,  gam = ifr_fit_age),
+         ifr_by_age_plus06y = predict_ifr(predictor = age + 6,  gam = ifr_fit_age),
+         ifr_by_age_plus08y = predict_ifr(predictor = age + 8,  gam = ifr_fit_age),
+         ifr_by_age_plus10y = predict_ifr(predictor = age + 10, gam = ifr_fit_age)) %>%
+  pivot_longer(starts_with("ifr"), names_to = "ifr_type", values_to = "ifr_est") %>%
+  mutate(ifr_type = factor(ifr_type, levels = c("ifr_by_age_plus00y", 
+                                                "ifr_by_age_plus02y", 
+                                                "ifr_by_age_plus04y", 
+                                                "ifr_by_age_plus06y", 
+                                                "ifr_by_age_plus08y", 
+                                                "ifr_by_age_plus10y"))) -> ages_to_plot
+
+#Setting colors
+ifr_cols <- c("ifr_by_age_plus00y" = "#ffccbc", 
+              "ifr_by_age_plus02y" = "#ff8a65", 
+              "ifr_by_age_plus04y" = "#ff7043", 
+              "ifr_by_age_plus06y" = "#ff5722", 
+              "ifr_by_age_plus08y" = "#e64a19", 
+              "ifr_by_age_plus10y" = "#bf360c")
+ifr_labs <- c("Baseline", 
+              "Shifted (2y younger)", 
+              "Shifted (4y younger)", 
+              "Shifted (6y younger)", 
+              "Shifted (8y younger)", 
+              "Shifted (10y younger)")
+names(ifr_labs) <- names(ifr_cols)
+
+#Plotting
+ggplot(data = ages_to_plot, aes(x = age, y = ifr_est, group = ifr_type)) +
+  geom_line(aes(color = ifr_type)) + 
+  scale_color_manual(values = ifr_cols, labels = ifr_labs,
+                     name = "Predictor of IFR") +
+  theme_minimal_hgrid(color = "white") +
+  labs(x = "Age", y = "IFR") +
+  theme(legend.position = "right",
+        text = element_text(size = 12))
+```
+
+***
+
+##### Section 3: Sourcing age structure data 
+
+***
+
+Placeholder: Using UN age data as a placeholder until get Tana data
+
+- Source: UNPOP 2020 age data
+- Calculating proportion of population in each age group
+
+```{r 3.01, echo = FALSE, eval = TRUE}
+mada.ages <- un_ages %>% filter(country == "Madagascar") %>% select(age, pop) %>% mutate(prop = pop/(sum(pop)))
+```
+***
+
+Tana data: Using data from draft of 2018 census (?)
+
+- Source: Fidy via Tanjona?
+
+```{r 3.02, echo = FALSE, eval = TRUE}
+tana.ages <- df.tana %>% mutate(age = Age) %>% select(age, pop) %>% mutate(prop = pop/(sum(pop)))
+```
+
+- Comparing UN Madagascar age structure data to Tana 2018 census data
+```{r 3.03, echo = FALSE, eval = TRUE}
+full_join(mada.ages %>% 
+            #Accounting for Tana data binning over 95s
+            mutate(prop = if_else(age == 95, sum(mada.ages$prop[ages >= 95]), prop)) %>% filter(age <= 95),
+            tana.ages,
+            by = "age") %>%
+  rename(mada.prop = prop.x) %>% rename(tana.prop = prop.y) %>% select(age, mada.prop, tana.prop) %>%
+  melt(id = c("age")) %>%
+  ggplot(aes(x = age, y = value, color = variable)) +
+    geom_point() +
+    ylab("Proportion of the population") +
+    theme_bw()
+```
+
+***
+
+##### Section 4: Writing a function to return an expected number of deaths
+
+***
+
+Function inputs
+1. A given number of infected individuals
+2. A specified age structure (ie the porportion of the population in each age group)
+3. Number of years to shift the IFR curve younger (from the GAM-fit-to-Verity-etc baseline)
+
+***
+
+- Assumptions: Infections are randomly distributed among age groups
+  - (ie the infected population reflects the age structure of the population as a whole)
+
+```{r 4.01, echo = FALSE, eval = TRUE}
+f.estimate_deaths <- function(n_infs = 10000, age_str_data = tana.ages, ifr_shift = 0){
+  
+  #pop_i the number of infected individuals of each age group
+  df.pop <- age_str_data %>% mutate(pop_i = prop*n_infs)
+  #Calculating the number of deaths expected per age for the specified IFR scenario
+  expected_deaths <- df.pop %>%
+    mutate(ifr_by_ageplusx = predict_ifr(predictor = age + ifr_shift, gam = ifr_fit_age)) %>%
+    pivot_longer(starts_with("ifr"), names_to = "ifr_type", values_to = "ifr_est") %>%
+    mutate(deaths = ifr_est*pop_i)
+  #Summing the number of total number of deaths
+  total_deaths <- sum(expected_deaths$deaths)
+  
+  return(total_deaths)
+}
+
+#For the first plot:
+# Calculating the expected number of deaths for a given number of infections
+#   Because the increase is linear, can simply calculate the expected number of deaths for 1 infection 
+#     then multiply by the number of infection
+data.frame(n_inf = 1:50000) %>% 
+  mutate(m.ifr_plus00y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 0),
+         m.ifr_plus02y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 2),
+         m.ifr_plus04y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 4),
+         m.ifr_plus06y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 6),
+         m.ifr_plus08y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 8),
+         m.ifr_plus10y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 10)) %>%
+  melt(id = "n_inf") %>%
+  ggplot(aes(x = n_inf, y = value, color = variable)) +
+    geom_point() +
+    scale_color_manual(values = c("#ffccbc", "#ff8a65", "#ff7043", "#ff5722", "#e64a19", "#bf360c"),
+                       name = "IFR scenario",
+                       labels = c("Baseline", "Shifted (2y younger)", "Shifted (4y younger)", 
+                                  "Shifted (6y younger)", "Shifted (8y younger)", "Shifted (10y younger)")) +
+    geom_hline(yintercept = 65.5, color = "#00bfa5") +
+    ylab("Expected weekly mortality") +
+    theme_bw()
+
+data.frame(n_inf = 1:50000) %>% 
+  mutate(m.ifr_plus00y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 0),
+         m.ifr_plus02y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 2),
+         m.ifr_plus04y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 4),
+         m.ifr_plus06y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 6),
+         m.ifr_plus08y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 8),
+         m.ifr_plus10y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 10)) %>%
+  melt(id = "n_inf") %>%
+  filter(value > 65.5) %>% group_by(variable) %>%
+  summarize(D.n_inf = min(n_inf), .groups = "drop")
+```
+
+
+
+
+
+
