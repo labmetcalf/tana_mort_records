@@ -215,9 +215,11 @@ Function inputs
 
 - Assumptions: Infections are randomly distributed among age groups
   - (ie the infected population reflects the age structure of the population as a whole)
+  
+- Note: The probability of death for one infection (`n_infs = 1`) can be multiplied by the number of infections to give the total number of deaths expected: `D = P(death|inf) * n_infs`
 
 ```{r 4.01, echo = FALSE, eval = TRUE}
-f.estimate_deaths <- function(n_infs = 10000, age_str_data = tana.ages, ifr_shift = 0){
+f.estimate_deaths <- function(n_infs = 1, age_str_data = tana.ages, ifr_shift = 0){
   
   #pop_i the number of infected individuals of each age group
   df.pop <- age_str_data %>% mutate(pop_i = prop*n_infs)
@@ -231,7 +233,21 @@ f.estimate_deaths <- function(n_infs = 10000, age_str_data = tana.ages, ifr_shif
   
   return(total_deaths)
 }
+```
 
+```{r 4.02, echo = FALSE, eval = TRUE}
+v.ages <- c("Age_0_9", "Age_10_19", "Age_20_29", "Age_30_39", "Age_40_49", "Age_50_59", "Age_60_69", "Age_70plus")
+v.susc <- c(0.40, 0.38, 0.79, 0.86, 0.80, 0.82, 0.88, 0.74)
+
+dfx <- data.frame(v.ages, v.susc, stringsAsFactors = FALSE)
+
+
+
+```
+
+
+
+```{r 4.01X, echo = FALSE, eval = TRUE}
 f.estimate_deaths(n_infs = 0, age_str_data = tana.ages, ifr_shift = 0)
 f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 0)
 f.estimate_deaths(n_infs = 2, age_str_data = tana.ages, ifr_shift = 0)
