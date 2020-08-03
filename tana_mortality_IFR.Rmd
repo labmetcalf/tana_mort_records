@@ -31,19 +31,16 @@ div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
 
 ##### (i) SET UP
 
-Defining main working directory, loading necessary packages
-```{r define mainDir + packages, echo = FALSE, eval = TRUE, message = FALSE}
-mainDir <- '/Users/blrice/Dropbox/Lab Projects/1 Post Doc/9 THE RONA/Mortalitly/code/'
+Loading necessary packages
+```{r i1, echo = FALSE, eval = TRUE, message = FALSE}
 library(tidyverse)
-library(RJSONIO)      #Retrieving coordinates of cities from text strings by searching OpenStreetMap
 library(kableExtra)   #For printing tables in R markdown
 library(knitr)        #For printing tables in R markdown
-library(rgho)         #Querying the WHO GHO database
 library(reshape2)     #Melting data frames as needed
 library(ggrepel)      #Plotting country names neatly
 library(cowplot)      #ggplot add on for better plots
 library(patchwork)    #Combining ggplots neatly
-library(mgcv)         #Gams
+library(mgcv)         #GAMs
 library(here)         #Finding files easily
 ```
 
@@ -55,14 +52,11 @@ Reading in data sets:
 
 ```{r i2, echo = FALSE, eval = TRUE}
 #1
-filename.ifr_ests <- "ifrs_from_lit.csv"
-ifr_ests <- read.csv(file.path(mainDir, filename.ifr_ests), stringsAsFactors = FALSE)
+ifr_ests <- read_csv(here("ifrs_from_lit.csv"))
 #2
-filename.un_ages <- "un_ages.csv"
-un_ages <- read.csv(file.path(mainDir, filename.un_ages), stringsAsFactors = FALSE)
+un_ages <- read_csv(here("un_ages.csv"))
 #3
-filename.df.tana <- "TNR_age.csv"
-df.tana <- read.csv(file.path(mainDir, filename.df.tana), stringsAsFactors = FALSE)
+df.tana <- read_csv(here("TNR_age.csv"))
 ```
 
 
@@ -179,11 +173,12 @@ Placeholder: Using UN age data as a placeholder until get Tana data
 ```{r 3.01, echo = FALSE, eval = TRUE}
 mada.ages <- un_ages %>% filter(country == "Madagascar") %>% select(age, pop) %>% mutate(prop = pop/(sum(pop)))
 ```
+
 ***
 
 Tana data: Using data from draft of 2018 census (?)
 
-- Source: Fidy via Tanjona?
+- Source: Fidy via Tanjona via CCO?
 
 ```{r 3.02, echo = FALSE, eval = TRUE}
 tana.ages <- df.tana %>% mutate(age = Age) %>% select(age, pop) %>% mutate(prop = pop/(sum(pop)))
@@ -200,7 +195,8 @@ full_join(mada.ages %>%
   melt(id = c("age")) %>%
   ggplot(aes(x = age, y = value, color = variable)) +
     geom_point() +
-    ylab("Proportion of the population") +
+    geom_smooth() +
+    ylab("Proportion of the population") + xlab("Age")
     theme_bw()
 ```
 
@@ -236,10 +232,22 @@ f.estimate_deaths <- function(n_infs = 10000, age_str_data = tana.ages, ifr_shif
   return(total_deaths)
 }
 
+f.estimate_deaths(n_infs = 0, age_str_data = tana.ages, ifr_shift = 0)
+f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 0)
+f.estimate_deaths(n_infs = 2, age_str_data = tana.ages, ifr_shift = 0)
+
+f.estimate_deaths(n_infs = 0, age_str_data = tana.ages, ifr_shift = 10)
+f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 10)
+f.estimate_deaths(n_infs = 2, age_str_data = tana.ages, ifr_shift = 10)
+
+
+
+
 #For the first plot:
 # Calculating the expected number of deaths for a given number of infections
 #   Because the increase is linear, can simply calculate the expected number of deaths for 1 infection 
-#     then multiply by the number of infection
+#     then multiply by the number of infections: Deaths = P(death|inf) * n_infs
+
 data.frame(n_inf = 1:50000) %>% 
   mutate(m.ifr_plus00y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 0),
          m.ifr_plus02y = n_inf*f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 2),
