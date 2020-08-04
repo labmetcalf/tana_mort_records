@@ -8,7 +8,7 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, eval = FALSE)
+knitr::opts_chunk$set(echo = FALSE, eval = FALSE, message = FALSE, warning = FALSE)
 ```
 
 ***
@@ -161,22 +161,24 @@ ggplot(data = ages_to_plot, aes(x = age, y = ifr_est, group = ifr_type)) +
 
 ***
 
-##### Section 3: Sourcing age structure data 
+##### Section 3: Sourcing demography age structure data
 
 ***
 
-Placeholder: Using UN age data as a placeholder until get Tana data
+3.1 | **UN age data:** Madagascar country wide age pattern as a placeholder until get better Tana-specific data
 
 - Source: UNPOP 2020 age data
 - Calculating proportion of population in each age group
 
 ```{r 3.01, echo = FALSE, eval = TRUE}
-mada.ages <- un_ages %>% filter(country == "Madagascar") %>% select(age, pop) %>% mutate(prop = pop/(sum(pop)))
+mada.ages <- un_ages %>% filter(country == "Madagascar") %>% select(age, pop) %>% mutate(prop = pop/(sum(pop))) %>%
+  #Binning all ages over 95 such that 95 is the last age (corresponds to ages 95+)
+  mutate(prop = if_else(age == 95, sum(prop[ages >= 95]), prop)) %>% filter(age <= 95)
 ```
 
 ***
 
-Tana data: Using data from draft of 2018 census (?)
+3.2 | **Tana data:** Using data from draft of 2018 census (?)
 
 - Source: Fidy via Tanjona via CCO?
 
@@ -184,25 +186,73 @@ Tana data: Using data from draft of 2018 census (?)
 tana.ages <- df.tana %>% mutate(age = Age) %>% select(age, pop) %>% mutate(prop = pop/(sum(pop)))
 ```
 
-- Comparing UN Madagascar age structure data to Tana 2018 census data
-```{r 3.03, echo = FALSE, eval = TRUE}
-full_join(mada.ages %>% 
-            #Accounting for Tana data binning over 95s
-            mutate(prop = if_else(age == 95, sum(mada.ages$prop[ages >= 95]), prop)) %>% filter(age <= 95),
-            tana.ages,
-            by = "age") %>%
+***
+
+3.3 | **WorldPop data:** Using X boundary around Tana
+
+(in progress)
+
+
+***
+
+- Comparing demography data sources: UN Madagascar age structure data vs Tana 2018 census data
+
+```{r 3.04, echo = FALSE, eval = TRUE}
+full_join(mada.ages, tana.ages, by = "age") %>%
   rename(mada.prop = prop.x) %>% rename(tana.prop = prop.y) %>% select(age, mada.prop, tana.prop) %>%
   melt(id = c("age")) %>%
   ggplot(aes(x = age, y = value, color = variable)) +
     geom_point() +
     geom_smooth() +
-    ylab("Proportion of the population") + xlab("Age")
+    ylab("Proportion of the population") + xlab("Age") +
     theme_bw()
 ```
 
 ***
 
-##### Section 4: Writing a function to return an expected number of deaths
+##### Section 4: Infection over age pattern scenarios
+
+***
+
+4.1 | **Baseline:** Infections are randomly distributed among age groups
+
+  - (ie the infected population reflects the age structure of the population as a whole)
+
+```{r 4.01, echo = FALSE, eval = TRUE}
+#Creating a data frame showing constant probability of infection among age groups
+inf.even <- data.frame(age = 0:95, pr_inf = rep(1, 96))
+```
+
+***
+
+***
+
+4.2 | **Susceptibility:** Susceptibility to infection varies by age groups
+
+  - (ie the infected population reflects age specific differences in susceptibility)
+  - (ie exposure is equally likely but the probability of infection upon exposure is reduced for children)
+  - Data sourced from: [Davies et al 2020 Nature Medicine](https://www.nature.com/articles/s41591-020-0962-9)
+    - Davies, N.G., Klepac, P., Liu, Y. et al. Age-dependent effects in the transmission and control of COVID-19 epidemics. Nat Med (2020). https://doi.org/10.1038/s41591-020-0962-9
+    - Data taken from: Extended Data Fig. 4: Posterior estimates for the consensus susceptibility and clinical fraction from 6 countries 
+
+Davies et al mean age specific susceptibility:
+
+| Age Group | Susc |
+| --------- | ---- |
+| 0-9       | 0.40 |
+
+
+```{r 4.02, echo = FALSE, eval = TRUE}
+#Creating a data frame showing constant probability of infection among age groups
+inf.even <- data.frame(age = 0:95, pr_inf = rep(1, 96))
+```
+
+***
+
+
+***
+
+##### Section 5: Writing a function to return an expected number of deaths
 
 ***
 
@@ -213,15 +263,18 @@ Function inputs
 
 ***
 
-- Assumptions: Infections are randomly distributed among age groups
-  - (ie the infected population reflects the age structure of the population as a whole)
-  
 - Note: The probability of death for one infection (`n_infs = 1`) can be multiplied by the number of infections to give the total number of deaths expected: `D = P(death|inf) * n_infs`
 
-```{r 4.01, echo = FALSE, eval = TRUE}
-f.estimate_deaths <- function(n_infs = 1, age_str_data = tana.ages, ifr_shift = 0){
+```{r 5.01, echo = FALSE, eval = FALSE}
+f.estimate_deaths <- function(n_infs = 1, demo.age.str = tana.ages, ifr_shift = 0, inf.age.str = inf.even){
   
-  #pop_i the number of infected individuals of each age group
+  
+  n_infs <- 1
+  age_str_data <- tana.ages
+  ifr_shift <- 0
+  inf.age.str <- inf.even
+  
+  #pop_i the number of infected individuals expected for each age group
   df.pop <- age_str_data %>% mutate(pop_i = prop*n_infs)
   #Calculating the number of deaths expected per age for the specified IFR scenario
   expected_deaths <- df.pop %>%
@@ -235,19 +288,37 @@ f.estimate_deaths <- function(n_infs = 1, age_str_data = tana.ages, ifr_shift = 
 }
 ```
 
-```{r 4.02, echo = FALSE, eval = TRUE}
+```{r 5.02, echo = FALSE, eval = FALSE}
+
+
+
 v.ages <- c("Age_0_9", "Age_10_19", "Age_20_29", "Age_30_39", "Age_40_49", "Age_50_59", "Age_60_69", "Age_70plus")
 v.susc <- c(0.40, 0.38, 0.79, 0.86, 0.80, 0.82, 0.88, 0.74)
 
-dfx <- data.frame(v.ages, v.susc, stringsAsFactors = FALSE)
+dfx <- data.frame(age_group = v.ages, susc = v.susc, stringsAsFactors = FALSE) %>% 
+  mutate(rel.susc = susc/sum(susc))
+
+sum(dfx$rel.susc)
 
 
+dfx %>% ggplot(aes(x = age_group, y = rel.susc)) + 
+  geom_point() +
+  #geom_hline(yintercept = 1) +
+  xlab("Age group") + ylab("Rel. Susceptibility") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5))
 
+dfx %>% ggplot(aes(x = age_group, y = rel.susc)) + 
+  geom_bar(position="dodge", stat="identity") +
+  #geom_hline(yintercept = 1) +
+  xlab("Age group") + ylab("Susceptibility") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5))
 ```
 
 
 
-```{r 4.01X, echo = FALSE, eval = TRUE}
+```{r 5.01X, echo = FALSE, eval = FALSE}
 f.estimate_deaths(n_infs = 0, age_str_data = tana.ages, ifr_shift = 0)
 f.estimate_deaths(n_infs = 1, age_str_data = tana.ages, ifr_shift = 0)
 f.estimate_deaths(n_infs = 2, age_str_data = tana.ages, ifr_shift = 0)
