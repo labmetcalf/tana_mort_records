@@ -108,7 +108,7 @@ ifrs_to_plot_age <- data.frame(ages = ages,
 - Writing a function to fit and shift IFR curves
 
 ```{r 2.01, echo = FALSE, eval = TRUE}
-predict_ifr <- function(predictor, gam = ifr_fit_age) {
+predict_ifr <- function(predictor, gam = ifr_fit_age){
   predict(gam, newdata = data.frame(predictor = predictor), type = "response")
 }
 ```
@@ -119,7 +119,7 @@ predict_ifr <- function(predictor, gam = ifr_fit_age) {
 #Creating a ifr by age table for plotting
 age_ifrs <- data.frame(age = seq(1, 100, by = 1))
 age_ifrs %>%
-  mutate(ifr_by_age_plus00y = predict_ifr(predictor = age + 0,      gam = ifr_fit_age), 
+  mutate(ifr_by_age_plus00y = predict_ifr(predictor = age + 0,  gam = ifr_fit_age), 
          ifr_by_age_plus02y = predict_ifr(predictor = age + 2,  gam = ifr_fit_age),
          ifr_by_age_plus04y = predict_ifr(predictor = age + 4,  gam = ifr_fit_age),
          ifr_by_age_plus06y = predict_ifr(predictor = age + 6,  gam = ifr_fit_age),
@@ -220,7 +220,7 @@ full_join(mada.ages, tana.ages, by = "age") %>%
 
 ```{r 4.01, echo = FALSE, eval = TRUE}
 #Creating a data frame showing constant probability of infection among age groups
-inf.even <- data.frame(age = 0:95, pr_inf = rep(1, 96))
+inf.even <- data.frame(age = 0:95, pr_susc = rep(1, 96))
 ```
 
 ***
@@ -235,16 +235,88 @@ inf.even <- data.frame(age = 0:95, pr_inf = rep(1, 96))
     - Davies, N.G., Klepac, P., Liu, Y. et al. Age-dependent effects in the transmission and control of COVID-19 epidemics. Nat Med (2020). https://doi.org/10.1038/s41591-020-0962-9
     - Data taken from: Extended Data Fig. 4: Posterior estimates for the consensus susceptibility and clinical fraction from 6 countries 
 
-Davies et al mean age specific susceptibility:
+Davies *et al* mean age specific susceptibility:
 
 | Age Group | Susc |
 | --------- | ---- |
-| 0-9       | 0.40 |
-
+|  0-9      | 0.40 |
+| 10-19     | 0.38 |
+| 20-29     | 0.79 |
+| 30-39     | 0.86 |
+| 40-49     | 0.80 |
+| 50-59     | 0.82 |
+| 60-69     | 0.88 |
+| 70+       | 0.74 |
 
 ```{r 4.02, echo = FALSE, eval = TRUE}
-#Creating a data frame showing constant probability of infection among age groups
-inf.even <- data.frame(age = 0:95, pr_inf = rep(1, 96))
+#Creating a first data frame to calculate the relative probability of infection among age groups
+v.ages <- c("Age_0_9", "Age_10_19", "Age_20_29", "Age_30_39", "Age_40_49", "Age_50_59", "Age_60_69", "Age_70plus")
+v.susc <- c(0.40, 0.38, 0.79, 0.86, 0.80, 0.82, 0.88, 0.74)
+#Expressing susceptibility as relative to the age group with the highest susceptibility
+calc.inf.susc <- data.frame(age_group = v.ages, susc = v.susc, stringsAsFactors = FALSE) %>% 
+  mutate(rel.susc = susc/max(susc))
+#Creating a second data frame with the susceptibility for each age
+inf.susc <- data.frame(age = 0:95) %>% mutate(pr_susc = case_when(
+  age >=  0 & age <=  9 ~ 0.4545455,
+  age >= 10 & age <= 19 ~ 0.4318182,
+  age >= 20 & age <= 29 ~ 0.8977273,
+  age >= 30 & age <= 39 ~ 0.9772727,
+  age >= 40 & age <= 49 ~ 0.9090909,
+  age >= 50 & age <= 59 ~ 0.9318182,
+  age >= 60 & age <= 69 ~ 1.0000000,
+  age >= 70             ~ 0.8409091
+))
+```
+
+***
+
+4.3 | **Exposure:** Probability of infection varies by age groups
+
+  - (ie adults are most exposed because they are taking buses etc)
+  - (as a place holder just creating a step function by hand)
+
+| Age Group | Susc |
+| --------- | ---- |
+|  0-9      | 0.20 |
+| 10-19     | 0.40 |
+| 20-29     | 0.70 |
+| 30-39     | 0.90 |
+| 40-49     | 1.00 |
+| 50-59     | 0.90 |
+| 60-69     | 0.70 |
+| 70+       | 0.50 |
+
+```{r 4.03, echo = FALSE, eval = TRUE}
+#Creating a second data frame with the susceptibility for each age
+inf.expo <- data.frame(age = 0:95) %>% mutate(pr_susc = case_when(
+  age >=  0 & age <=  9 ~ 0.20,
+  age >= 10 & age <= 19 ~ 0.40,
+  age >= 20 & age <= 29 ~ 0.70,
+  age >= 30 & age <= 39 ~ 0.90,
+  age >= 40 & age <= 49 ~ 1.00,
+  age >= 50 & age <= 59 ~ 0.90,
+  age >= 60 & age <= 69 ~ 0.70,
+  age >= 70 & age <= 79 ~ 0.40,
+  age >= 80 & age <= 89 ~ 0.20,
+  age >= 90 & age <= 95 ~ 0.20
+))
+```
+
+***
+
+F4 | **Plotting:** Comparing different simulated infections over age patterns
+
+```{r 4.04, echo = FALSE, eval = TRUE}
+full_join(inf.even, inf.susc, by = "age") %>%
+  rename(inf.even = pr_susc.x) %>% rename(inf.susc = pr_susc.y) %>%
+  full_join(inf.expo,  by = "age") %>% rename(inf.expo = pr_susc) %>%
+  melt(id = c("age")) %>%
+  ggplot(aes(x = age, y = value, color = variable)) +
+    geom_step() +
+    facet_grid(rows = vars(variable)) +
+    ylab("Relative susceptibility") + xlab("Age") +
+    theme_bw() +
+    theme(legend.position = "none")
 ```
 
 ***
@@ -263,24 +335,23 @@ Function inputs
 
 ***
 
-- Note: The probability of death for one infection (`n_infs = 1`) can be multiplied by the number of infections to give the total number of deaths expected: `D = P(death|inf) * n_infs`
+- Note: The probability of death for one infection (`n_infs = 1`) can be multiplied by the number of infections to give the total number of deaths expected: `total_deaths = P(death|n_infs = 1) * n_infs`
 
-```{r 5.01, echo = FALSE, eval = FALSE}
+```{r 5.01, echo = FALSE, eval = TRUE}
 f.estimate_deaths <- function(n_infs = 1, demo.age.str = tana.ages, ifr_shift = 0, inf.age.str = inf.even){
   
-  
-  n_infs <- 1
-  age_str_data <- tana.ages
-  ifr_shift <- 0
-  inf.age.str <- inf.even
-  
-  #pop_i the number of infected individuals expected for each age group
-  df.pop <- age_str_data %>% mutate(pop_i = prop*n_infs)
+  #prop.s is the proportion of the susceptible population contributed by each age
+  df.pop <- full_join(demo.age.str, inf.age.str, by = "age") %>%
+    mutate(pop.s = pop * pr_susc) %>%
+    mutate(prop.s = pop.s/sum(pop.s)) %>%
+    #pop.inf is the number of infected individuals contributed by each age:
+    #   = number of infections (n_infs) * proportion of the susceptible population contributed by each age (prop.s)
+    mutate(pop.inf = prop.s * n_infs)
   #Calculating the number of deaths expected per age for the specified IFR scenario
   expected_deaths <- df.pop %>%
     mutate(ifr_by_ageplusx = predict_ifr(predictor = age + ifr_shift, gam = ifr_fit_age)) %>%
     pivot_longer(starts_with("ifr"), names_to = "ifr_type", values_to = "ifr_est") %>%
-    mutate(deaths = ifr_est*pop_i)
+    mutate(deaths = ifr_est * pop.inf)
   #Summing the number of total number of deaths
   total_deaths <- sum(expected_deaths$deaths)
   
@@ -288,32 +359,49 @@ f.estimate_deaths <- function(n_infs = 1, demo.age.str = tana.ages, ifr_shift = 
 }
 ```
 
-```{r 5.02, echo = FALSE, eval = FALSE}
+```{r 5.02, echo = FALSE, eval = TRUE}
+data.frame(n_inf = 1:100) %>% 
+  mutate(even00 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift =  0, inf.age.str = inf.even),
+         even02 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift =  2, inf.age.str = inf.even),
+         even10 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift = 10, inf.age.str = inf.even),
+         
+         susc00 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift =  0, inf.age.str = inf.susc),
+         susc02 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift =  2, inf.age.str = inf.susc),
+         susc10 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift = 10, inf.age.str = inf.susc),
+         
+         expo00 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift =  0, inf.age.str = inf.expo),
+         expo02 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift =  2, inf.age.str = inf.expo),
+         expo10 = n_inf*f.estimate_deaths(n_infs = 1, demo.age.str = tana.ages, ifr_shift = 10, inf.age.str = inf.expo)) %>%
+  melt(id = "n_inf") %>%
+  mutate(pattern.group = case_when(
+    variable == "even00" ~ "Even",
+    variable == "even02" ~ "Even",
+    variable == "even10" ~ "Even",
 
+    variable == "susc00" ~ "Susc",
+    variable == "susc02" ~ "Susc",
+    variable == "susc10" ~ "Susc",
 
+    variable == "expo00" ~ "Expo",
+    variable == "expo02" ~ "Expo",
+    variable == "expo10" ~ "Expo")) %>%
+  mutate(ifr.shift.group = case_when(
+    variable == "even00" ~ "Baseline",
+    variable == "even02" ~ "Shifted (2y younger)",
+    variable == "even10" ~ "Shifted (10y younger)",
 
-v.ages <- c("Age_0_9", "Age_10_19", "Age_20_29", "Age_30_39", "Age_40_49", "Age_50_59", "Age_60_69", "Age_70plus")
-v.susc <- c(0.40, 0.38, 0.79, 0.86, 0.80, 0.82, 0.88, 0.74)
+    variable == "susc00" ~ "Baseline",
+    variable == "susc02" ~ "Shifted (2y younger)",
+    variable == "susc10" ~ "Shifted (10y younger)",
 
-dfx <- data.frame(age_group = v.ages, susc = v.susc, stringsAsFactors = FALSE) %>% 
-  mutate(rel.susc = susc/sum(susc))
-
-sum(dfx$rel.susc)
-
-
-dfx %>% ggplot(aes(x = age_group, y = rel.susc)) + 
-  geom_point() +
-  #geom_hline(yintercept = 1) +
-  xlab("Age group") + ylab("Rel. Susceptibility") +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5))
-
-dfx %>% ggplot(aes(x = age_group, y = rel.susc)) + 
-  geom_bar(position="dodge", stat="identity") +
-  #geom_hline(yintercept = 1) +
-  xlab("Age group") + ylab("Susceptibility") +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5))
+    variable == "expo00" ~ "Baseline",
+    variable == "expo02" ~ "Shifted (2y younger)",
+    variable == "expo10" ~ "Shifted (10y younger)")) %>%
+  ggplot(aes(x = n_inf, y = value, color = pattern.group)) +
+    geom_point() +
+    ylab("Expected weekly mortality") +
+    facet_grid(cols = vars(ifr.shift.group)) +
+    theme_bw()
 ```
 
 
